@@ -32,7 +32,7 @@ class AnomalyDetection:
         .open_h5_file_read('MillionSongSubset/AdditionalFiles/subset_msd_summary_file.h5')
         data = []
         for i in songs:
-            rowIter = h5.root.analysis.songs.where('track_id=='+ i)
+            rowIter = h5.root.analysis.songs.where('track_id=={}'.format(str.encode(i)))
             for row in rowIter:
                 songInfo = [row['energy'], row['mode'], row['loudness'], row['tempo'], row['segment_pitches'], row['segments_timbre'], row['dancebility']]
                 data.append(songInfo)
