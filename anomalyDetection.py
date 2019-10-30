@@ -7,12 +7,13 @@ from pickle import load, dump
 from os.path import exists
 import sqlite3
 import hdf5_getters
+from sklearn.svm import OneClassSVM 
 #from numpy import asarray, save, load
 
 class AnomalyDetection:
     def __init__(self, filename):
         self.filename = filename
-        self.models = []
+        self.models = {}
     
     def mapFunction(self, x):
         if int(x[1]) > 0:
@@ -22,13 +23,22 @@ class AnomalyDetection:
         topSongs = sorted(data, key=lambda x: x[1], reverse=True)
         songIDs = list(map(self.mapFunction, topSongs))
         trainingData = self.getSongData(songIDs)
+        model = OneClassSVM().fit(trainingData)
+        self.models[userID] = model    
+        
     # energy, mode, loudness, tempo, segment_pitches, segments_timbre, danceability
     def getSongData(self, songs):
         h5 = hdf5_getters\
         .open_h5_file_read('MillionSongSubset/AdditionalFiles/subset_msd_summary_file.h5')
+        data = []
         for i in songs:
-            row = h5.root.analysis.songs.where('track_id=='+ i)
-            data = row['energy', 'mode', 'loudness', 'tempo', 'segment_pitches', 'segments_timbre', 'dancebility']
+            rowIter = h5.root.analysis.songs.where('track_id=='+ i)
+            for row in rowIter:
+                songInfo = [row['energy'], row['mode'], row['loudness'], row['tempo'], row['segment_pitches'], row['segments_timbre'], row['dancebility']]
+                data.append(songInfo)
+                break
+        return data
+        
     # This looks in the sql database, which is very limited
     # def getSongData(self, songs):
     #     tm_conn = sqlite3.connect('MillionSongSubset/AdditionalFiles/subset_track_metadata.db')
@@ -74,7 +84,7 @@ class AnomalyDetection:
         #userInfo = asarray(userInfo)
         #save('userData', userInfo)
         return userInfo
-    def processUserDataBatched(self):
+    def processUserData(self):
         with open(self.filename, 'r') as file:
             userName = ''
             data = []
@@ -92,4 +102,4 @@ class AnomalyDetection:
 
 if __name__ == '__main__':
     detector = AnomalyDetection('train_triplets.txt')
-    detector.processUserDataBatched()
+    detector.processUserData()
