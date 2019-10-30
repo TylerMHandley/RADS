@@ -6,6 +6,7 @@
 from pickle import load, dump
 from os.path import exists
 import sqlite3
+import hdf5_getters
 #from numpy import asarray, save, load
 
 class AnomalyDetection:
@@ -21,18 +22,25 @@ class AnomalyDetection:
         topSongs = sorted(data, key=lambda x: x[1], reverse=True)
         songIDs = list(map(self.mapFunction, topSongs))
         trainingData = self.getSongData(songIDs)
-
-
+    # energy, mode, loudness, tempo, segment_pitches, segments_timbre, danceability
     def getSongData(self, songs):
-        tm_conn = sqlite3.connect('MillionSongSubset/AdditionalFiles/subset_track_metadata.db')
-        found_songs = []
-        for songId in songs:
-            query = "SELECT * FROM songs WHERE song_id=?"
-            res = tm_conn.execute(query, (songId,))
-            fetched_value = res.fetchall() 
-            if len(fetched_value) > 0:
-                found_songs.append(fetched_value[0])
-        print(len(found_songs))
+        h5 = hdf5_getters\
+        .open_h5_file_read('MillionSongSubset/AdditionalFiles/subset_msd_summary_file.h5')
+        for i in songs:
+            row = h5.root.analysis.songs.where('track_id=='+ i)
+            data = row['energy', 'mode', 'loudness', 'tempo', 'segment_pitches', 'segments_timbre', 'dancebility']
+    # This looks in the sql database, which is very limited
+    # def getSongData(self, songs):
+    #     tm_conn = sqlite3.connect('MillionSongSubset/AdditionalFiles/subset_track_metadata.db')
+    #     found_songs = []
+    #     for songId in songs:
+    #         query = "SELECT * FROM songs WHERE song_id=?"
+    #         res = tm_conn.execute(query, (songId,))
+    #         fetched_value = res.fetchall() 
+    #         if len(fetched_value) > 0:
+    #             print(fetched_value)
+    #             found_songs.append(fetched_value[0])
+    #     print(len(found_songs))
 
     def getAllUserData(self):
         # This function will eat all your RAM
@@ -66,8 +74,7 @@ class AnomalyDetection:
         #userInfo = asarray(userInfo)
         #save('userData', userInfo)
         return userInfo
-    def processUserDataBatched(self, batch_size=1024):
-        # From https://stackoverflow.com/questions/519633/lazy-method-for-reading-big-file-in-python
+    def processUserDataBatched(self):
         with open(self.filename, 'r') as file:
             userName = ''
             data = []
