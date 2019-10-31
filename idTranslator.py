@@ -41,7 +41,7 @@ class Translator:
         with open(self.filename, 'r') as read_file:
             userName = ''
             data = []
-            with open('user_data.txt', 'a+') as writeFile:
+            with open('user_data1.txt', 'a+') as writeFile:
                 for line in read_file:
                     lineData = line.split('\t')
                     if userName == lineData[0]:
