@@ -2,104 +2,110 @@
 '''
     This file will use the One Class SVM to classify results into regular songs and anomaly songs
 '''
-
+    '''
+        Data fields of a given entry
+        ['analysis_sample_rate', 'audio_md5', 'danceability', 'duration', 'end_of_fade_in', 
+        'energy', 'idx_bars_confidence', 'idx_bars_start', 'idx_beats_confidence', 'idx_beats_start', 
+        'idx_sections_confidence', 'idx_sections_start', 'idx_segments_confidence', 
+        'idx_segments_loudness_max', 'idx_segments_loudness_max_time', 'idx_segments_loudness_start', 
+        'idx_segments_pitches', 'idx_segments_start', 'idx_segments_timbre', 'idx_tatums_confidence', 
+        'idx_tatums_start', 'key', 'key_confidence', 'loudness', 'mode', 'mode_confidence', 
+        'start_of_fade_out', 'tempo', 'time_signature', 'time_signature_confidence', 'track_id']    
+    ''' 
 from pickle import load, dump
+from numpy import asarray
+from numpy.random import rand
 from os.path import exists
 import sqlite3
 import hdf5_getters
 from sklearn.svm import OneClassSVM 
+from multiprocessing import Process, Value, Manager, Lock
+from random import random, choice, randrange
 #from numpy import asarray, save, load
 
 class AnomalyDetection:
     def __init__(self, filename):
         self.filename = filename
         self.models = {}
+        self.num_user = 0
+        self.completed = Value('i', 0)
     
-    def mapFunction(self, x):
-        if int(x[1]) > 0:
-            return x[0]
+    def generateRandom(self):
+        val1 = randrange(-0.30, 0.30, 0.01) * -7.75
+        val2 = randrange(-0.30, 0.30, 0.01) * 113.359
+        random_song = [ random(), choice[1,2,3], -7.75+val1, 113.359+val2, random(), random(), random()]
+        return random_song
 
-    def trainSVM(self, userID, data):
-        topSongs = sorted(data, key=lambda x: x[1], reverse=True)
-        songIDs = list(map(self.mapFunction, topSongs))
-        trainingData = self.getSongData(songIDs)
-        model = OneClassSVM().fit(trainingData)
-        self.models[userID] = model    
-        
-    # energy, mode, loudness, tempo, segment_pitches, segments_timbre, danceability
     def getSongData(self, songs):
         h5 = hdf5_getters\
         .open_h5_file_read('MillionSongSubset/AdditionalFiles/subset_msd_summary_file.h5')
         data = []
         for i in songs:
-            rowIter = h5.root.analysis.songs.where('track_id=={}'.format(str.encode(i)))
-            for row in rowIter:
-                songInfo = [row['energy'], row['mode'], row['loudness'], row['tempo'], row['segment_pitches'], row['segments_timbre'], row['dancebility']]
-                data.append(songInfo)
-                break
+            if i[0] == 'S':
+                data.append(self.generateRandom())
+            else:
+                print(row['idx_segments_pitches'])
+                for index in h5.root.analysis.songs.get_where_list('track_id=={}'.format(str.encode(track_id))):
+                    row = h5.root.analysis.songs[index]
+                    songInfo = [row['energy'], row['mode'], row['loudness'], row['tempo'], row['danceability'], 
+                    row['idx_segments_pitches'], row['idx_segments_timbre']]
+                    # segmentPitch = asarray(row['idx_segments_pitches']).flatten()
+                    # segmentTimbre = asarray(row['idx_segments_timbre']).flatten()
+                    # songInfo.extend(segmentPitch)
+                    # songInfo.extend(segmentTimbre)
+                    data.append(songInfo)
+                # rows = h5.root.analysis.songs.get_where_list('track_id=={}'.format(str.encode(track_id)))
+                # row = h5.root.analysis.songs[rows[0]]
+                # songInfo = [row['energy'], row['mode'], row['loudness'], row['tempo'], row['danceability'],
+                # row['idx_segments_pitches'], row['idx_segments_timbre']]
+                # data.append(songInfo)
         return data
-        
-    # This looks in the sql database, which is very limited
-    # def getSongData(self, songs):
-    #     tm_conn = sqlite3.connect('MillionSongSubset/AdditionalFiles/subset_track_metadata.db')
-    #     found_songs = []
-    #     for songId in songs:
-    #         query = "SELECT * FROM songs WHERE song_id=?"
-    #         res = tm_conn.execute(query, (songId,))
-    #         fetched_value = res.fetchall() 
-    #         if len(fetched_value) > 0:
-    #             print(fetched_value)
-    #             found_songs.append(fetched_value[0])
-    #     print(len(found_songs))
+    
+    def mapFunction(self, x):
+        if x[1] > 0:
+            return x[0]
 
-    def getAllUserData(self):
-        # This function will eat all your RAM
-        # The data initially has each song per user on a different line, here we
-        # concatenate all those together into a list where an index  is a list where the 
-        # first element is userID and the rest is tuples of songID and counts sorted in reverse order.
-        # File data format is userID\tsongID\tcount
-        if exists('userData.p'):
-            print('Existing user file found. Loading that...')
-            userInfo = load(open('userData.p', 'rb'))
-            #userInfo = load('userData.npy')
-            print('Loading Complete.')
-            return userInfo
-        userInfo = []
-        previousUser = ''
-        songList = []
-        print('User file not found. Loading data from {}'.format(filename))
-        with open(self.filename, 'r') as inputFile:
-            for line in inputFile:
-                current = line.split('\t')
-                if current[0] != previousUser: 
-                    if previousUser != '':
-                        songList.sort(reverse=True, key=lambda x: x[1])
-                        userInfo.append(songList)
-                    previousUser = current[0]
-                    songList=[previousUser, (current[1], current[2])]
-                songList.append((current[1], current[2]))
-            userInfo.append(songList)
-        print('Loading Complete.\nDumping data to userData.p')
-        dump(userInfo, open('userData.p', 'wb'))
-        #userInfo = asarray(userInfo)
-        #save('userData', userInfo)
-        return userInfo
-    def processUserData(self):
-        with open(self.filename, 'r') as file:
+    def getUserData(self, userID, data, model_dict, lock):
+        topSongs = sorted(data, key=lambda x: x[1], reverse=True)
+        songIDs = list(map(self.mapFunction, topSongs))
+        song_data = self.getSongData(data)
+        model = OneClassSVM().fit(data)
+        model_dict[userID] = model
+        with lock:
+            self.completed.value +=1
+            print('Completed models for {} users'.format(self.completed))
+
+    def buildModels(self):
+        with open(self.filename, 'r') as read_file:
             userName = ''
             data = []
-            for line in file:
-                lineData = line.split('\t')
-                if userName == lineData[0]:
-                    data.append((lineData[1], lineData[2]))
-                else:
-                    if userName != '':
-                        self.trainSVM(userName, data)
-                    userName = lineData[0]
-                    data = [(lineData[1], lineData[2])]
+            pool_num = 0
+            pool = []
+            lock = Lock()
+            with Manager() as mnger:
+                shared_dict = mnger.dict()
+                for line in read_file:
+                    lineData = line.split('\t')
+                    if userName == lineData[0]:
+                        data.append((lineData[1], int(lineData[2])))
+                    else:
+                        if userName != '':
+                            self.num_user+=1
+                            p = Process(target=getUserData, args=(userName, data, shared_dict, lock))
+                            pool.append(p)
+                            pool_num+=1
+                            p.start()
+                        if pool_num >= 10:
+                            for proc in pool:
+                                proc.join()
+                            pool = []
+                            pool_num = 0
+                        userName = lineData[0]
+                        data = [(lineData[1], int(lineData[2]))]
+                self.models = shared_dict
 
 
 
 if __name__ == '__main__':
-    detector = AnomalyDetection('train_triplets.txt')
-    detector.processUserData()
+    detector = AnomalyDetection('user_data.txt')
+    detector.buildModels()
