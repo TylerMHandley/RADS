@@ -17,102 +17,61 @@ from numpy import asarray
 from numpy.random import rand
 from os.path import exists
 import sqlite3
-import hdf5_getters
 from sklearn.svm import OneClassSVM 
-from multiprocessing import Process, Value, Manager, Lock
 from random import random, choice, randrange
 import pickle
+from pandas import read_csv
+from collections import Counter
 #from numpy import asarray, save, load
 
 class AnomalyDetection:
-    def __init__(self, filename):
-        self.filename = filename
+    def __init__(self, song_features, listen_history):
+        self.song_features = song_features
+        self.history = listen_history
         self.models = {}
         self.num_user = 0
-        self.completed = Value('i', 0)
+        self.completed = 0
     
-    def generateRandom(self):
-        val1 = randrange(-30, 30)/100 * -7.75
-        val2 = randrange(-30, 30)/100 * 113.359
-        random_song = [ random(), choice([1,2,3]), -7.75+val1, 113.359+val2, random(), random(), random()]
-        return random_song
-
     def getSongData(self, songs):
-        h5 = hdf5_getters\
-        .open_h5_file_read('MillionSongSubset/AdditionalFiles/subset_msd_summary_file.h5')
         data = []
         for i in songs:
-            if i[0] == 'S':
-                data.append(self.generateRandom())
-            else:
-                #print(row['idx_segments_pitches'])
-                for index in h5.root.analysis.songs.get_where_list('track_id=={}'.format(str.encode(i))):
-                    row = h5.root.analysis.songs[index]
-                    songInfo = [row['energy'], row['mode'], row['loudness'], row['tempo'], row['danceability'], 
-                    row['idx_segments_pitches'], row['idx_segments_timbre']]
-                    # segmentPitch = asarray(row['idx_segments_pitches']).flatten()
-                    # segmentTimbre = asarray(row['idx_segments_timbre']).flatten()
-                    # songInfo.extend(segmentPitch)
-                    # songInfo.extend(segmentTimbre)
-                    data.append(songInfo)
-                # rows = h5.root.analysis.songs.get_where_list('track_id=={}'.format(str.encode(track_id)))
-                # row = h5.root.analysis.songs[rows[0]]
-                # songInfo = [row['energy'], row['mode'], row['loudness'], row['tempo'], row['danceability'],
-                # row['idx_segments_pitches'], row['idx_segments_timbre']]
-                # data.append(songInfo)
+            try:
+                row = self.song_features.loc[i]
+                data.append(row)
+            except KeyError:
+                print('Skipped')
         return data
-    
-    def mapFunction(self, x):
-        if x[1] > 0:
-            return x[0]
 
-    def getUserData(self, userID, data, model_dict, lock):
-        topSongs = sorted(data, key=lambda x: x[1], reverse=True)
-        songIDs = list(map(self.mapFunction, topSongs))
-        song_data = self.getSongData(songIDs)
+    def getUserData(self, userID, data):
+        songCounts = Counter(data)
+        topSongs = sorted(songCounts.keys(), key=lambda x: songCounts[x], reverse=True)[:100]
+        # songIDs = list(map(self.mapFunction, topSongs))
+        song_data = self.getSongData(topSongs)
         model = OneClassSVM(gamma='auto').fit(song_data)
-        model_dict[userID] = model
-        with lock:
-            self.completed.value +=1
-            print('Completed models for {} users'.format(self.completed.value), end='\r')
+        self.models[userID] = model
+        self.completed += 1
+        print('Completed models for {} users'.format(self.completed), end='\r')
 
     def buildModels(self, pickleName):
-        with open(self.filename, 'r') as read_file:
-            userName = ''
-            data = []
-            pool_num = 0
-            pool = []
-            lock = Lock()
-            with Manager() as mnger:
-                shared_dict = mnger.dict()
-                for line in read_file:
-                    if self.completed.value > 1000:
-                        break
-                    lineData = line.split('\t')
-                    if userName == lineData[0]:
-                        data.append((lineData[1], int(lineData[2])))
-                    else:
-                        if userName != '':
-                            self.num_user+=1
-                            p = Process(target=self.getUserData, args=(userName, data, shared_dict, lock))
-                            pool.append(p)
-                            pool_num+=1
-                            p.start()
-                        if pool_num >= 10:
-                            for proc in pool:
-                                proc.join()
-                            pool = []
-                            pool_num = 0
-                        userName = lineData[0]
-                        data = [(lineData[1], int(lineData[2]))]
-                if pool_num > 0:
-                    for i in pool:
-                        i.join()
-                self.models = shared_dict
+        userName = ""
+        data = []
+        for index, lineData in self.history.itertuples():
+            if userName == index:
+                data.append(lineData)
+            else:
+                if userName != "":
+                    self.getUserData(userName, data)
+                data = [lineData]
+                userName = index
         pickle.dump(self.models, open(pickleName, 'wb'))        
 
 
 
 if __name__ == '__main__':
-    detector = AnomalyDetection('200000_user_data.txt')
+    song_features = read_csv("musicbrainz-data/song_features.csv", index_col='track_id')
+    part1 = read_csv("musicbrainz-data/userid-trackid-1.csv", index_col='user_id')
+    part2 = read_csv("musicbrainz-data/userid-trackid-2.csv", index_col='user_id')
+    listen_hist = part1.append(part2)
+
+    detector = AnomalyDetection(song_features, listen_hist)
     detector.buildModels('user_models.p')
