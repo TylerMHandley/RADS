@@ -1,2 +1,8 @@
 *.tar.gz
 train_triplets.txt*
+
+# vsCode
+*.vscode
+
+# macOS
+*.DS_Store
