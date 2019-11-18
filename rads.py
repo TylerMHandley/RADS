@@ -15,7 +15,7 @@ def loadData(filenames, index_column):
         return data
 
 class RADS:
-    def __init__(self, song_files, user_files, pickle_filename=None):
+    def __init__(self, song_files, user_files, svm_pickle_filename=None, history_pickle_filename=None):
         self.radsData = None
         self.userModels = None
         self.song_data = loadData(song_files, 'track_id')
@@ -31,7 +31,7 @@ class RADS:
             print("Pickled file not found, generating SVMs...")
             user_data = loadData(self.user_history_files, 'user_id')
             anomalyDetector = AnomalyDetection(self.song_data, user_history_data)
-            anomalyDetector.build(self.pickle_filename)
+            anomalyDetector.build(self.svm_pickle_filename, self.history_pickle_filename)
             self.userModels = anomalyDetector.models
 
     def generate(self, pickle_filename):
@@ -83,5 +83,5 @@ class RADS:
 if __name__ == "__main__":
     song_feature_files = ['musicbrainz-data/song_features.csv']
     user_history_files = ['musicbrainz-data/userid-trackid-1.csv', 'musicbrainz-data/userid-trackid-2.csv']
-    model = RADS(song_feature_files, user_history_files, 'user_models.p')
+    model = RADS(song_feature_files, user_history_files, 'user_models.p', 'user_histories.p')
     model.generate('rads_data.p')

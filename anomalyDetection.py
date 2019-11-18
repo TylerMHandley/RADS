@@ -31,6 +31,7 @@ class AnomalyDetection:
         self.models = {}
         self.num_user = 0
         self.completed = 0
+        self.user_histories = {}
     
     def getSongData(self, songs):
         data = []
@@ -43,6 +44,7 @@ class AnomalyDetection:
         return data
 
     def getUserData(self, userID, data):
+        self.user_histories[userID] = data
         songCounts = Counter(data)
         topSongs = sorted(songCounts.keys(), key=lambda x: songCounts[x], reverse=True)[:100]
         # songIDs = list(map(self.mapFunction, topSongs))
@@ -52,7 +54,7 @@ class AnomalyDetection:
         self.completed += 1
         print('Completed models for {} users'.format(self.completed), end='\r')
 
-    def buildModels(self, pickleName):
+    def buildModels(self, svm_pickle_name, history_pickle_name):
         userName = ""
         data = []
         for user_id, lineData in self.history.itertuples():
@@ -63,8 +65,10 @@ class AnomalyDetection:
                     self.getUserData(userName, data)
                 data = [lineData]
                 userName = user_id
-        if pickleName:
-            pickle.dump(self.models, open(pickleName, 'wb'))        
+        if svm_pickle_name:
+            pickle.dump(self.models, open(svm_pickle_name, 'wb'))
+        if history_pickle_name:
+            pickle.dump(self.user_histories, open(history_pickle_name, 'wb'))
 
 
 
@@ -75,4 +79,4 @@ if __name__ == '__main__':
     listen_hist = part1.append(part2)
 
     detector = AnomalyDetection(song_features, listen_hist)
-    detector.buildModels('user_models.p')
+    detector.buildModels('user_models.p', 'user_histories.p')
