@@ -55,15 +55,16 @@ class AnomalyDetection:
     def buildModels(self, pickleName):
         userName = ""
         data = []
-        for index, lineData in self.history.itertuples():
-            if userName == index:
+        for user_id, lineData in self.history.itertuples():
+            if userName == user_id:
                 data.append(lineData)
             else:
                 if userName != "":
                     self.getUserData(userName, data)
                 data = [lineData]
-                userName = index
-        pickle.dump(self.models, open(pickleName, 'wb'))        
+                userName = user_id
+        if pickleName:
+            pickle.dump(self.models, open(pickleName, 'wb'))        
 
 
 
