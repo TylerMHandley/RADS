@@ -10,6 +10,9 @@ from os.path import isfile
 
 class Auralist:
     def __init__(self, num_topics=100):
+        """Constructor. Sets up all needed variables for prediction
+        Some variables will be loaded from pickle files, if they're available.
+        """
         print('Loading listening history, pt. 1...', end='\r')
         hist_pt1 = read_csv('musicbrainz-data/userid-trackid-1.csv')
         print('Loading listening history, pt. 2...')
@@ -42,7 +45,7 @@ class Auralist:
         self.index2trackid = dict(zip(indexes, track_ids))
 
         print('Counting # of unique listeners for every song...')
-        self.popularity = array([len(set(user_list)) for user_list in self.corpus_raw]).reshape(-1, 1)
+        self.popularity_count = array([len(set(user_list)) for user_list in self.corpus_raw]).reshape(-1, 1)
 
         if isfile('pickles/topic.pickle'):
             print('Loading LDA matrix (from pickle)...')
@@ -53,9 +56,22 @@ class Auralist:
             self.topic_composition = self.train_lda(num_topics)
 
         print('Calculating listener diversity array...')
-        self.listener_div = self.listener_diversity_rankings(self.topic_composition, self.popularity)
+        self.listener_div = self.listener_diversity_rankings(self.topic_composition, self.popularity_count)
 
     def lda_similarity(self, topic_comp, user_tc):
+        """Compute the LDA similarity between each row of two different matrices
+        Follows the definition of LDA Similarity in the Auralist paper
+        params:
+            topic_comp: total topic composition matrix
+                This will almost always be self.topic_composition
+                but it is open to other uses
+            user_tc: User's topic composition matrix
+                Topic composition matrix that corresponds to the user's
+                subset of listened-to songs. General way to get this is to
+                call get_user_topic_comp()
+        returns: an array, where each index corresponds to a song's similarity to
+            the subset of songs in user_tc
+        """
         # The code below does the following, but slightly faster:
         # tc_norm = norm(topic_comp, axis=1, keepdims=True)
         # user_norm = norm(user_tc, axis=1, keepdims=True)
@@ -67,6 +83,13 @@ class Auralist:
             (user_tc * reciprocal(norm(user_tc, axis=1, keepdims=True))).T), axis=1)
 
     def basic_auralist(self, user_id):
+        """Perform basic auralist, as described in the Auralist paper
+        This is module 1 of Auralist
+        params:
+            user_id: ID of the user to predict recommendations for
+        returns: indexes of the track IDs to recommend, where 0 is the most recommended,
+            element at end is least recommended
+        """
         # Get topic composition for user history matrix
         user_topic_composition = self.get_user_topic_comp(user_id)
 
@@ -90,6 +113,16 @@ class Auralist:
         return self.topic_composition[track_ids]
 
     def listener_diversity_rankings(self, topic_composition, popularity):
+        """Calculate rankings for module 2 of Auralist.
+        params:
+        topic_comp: total topic composition matrix
+                This will almost always be self.topic_composition
+                but it is open to other uses
+        popularity: array or list of popularity measures for each song. In the current
+            implementation, popularity is count of how many unique users listened to a
+            song
+        returns: List of indexes sorted by listener diversity
+        """
         # Calculate equation for Listener Diversity
         list_div_basic = -1 * npsum((topic_composition * log2(topic_composition)), axis=1)
         # Calculate linear regression for Offset_pop(i)
@@ -103,21 +136,53 @@ class Auralist:
         return list_div.argsort()[::-1]
 
     def train_listener_diversity_lr(self, popularity, diversity):
-        # Calculate linear regression for Offset_pop(i)
+        """Calculate linear regression for Offset_pop(i) from Auralist Paper
+        params:
+            popularity: array or list of popularity measures for each song. In the current
+            implementation, popularity is count of how many unique users listened to a
+            song
+            diversity: Listener diversity matrix described in paper
+        returns: Linear regression model fit w/ popularity as X and diversity as Y
+        """
         return LinearRegression().fit(popularity, diversity)   
 
     def train_lda(self, num_topics):
+        """Train the Latent Dirichlet Allocation Model needed for Auralist
+        The model will be saved to a pickle file if it isn't present
+        params:
+            num_topics: number of topics to generalize to for LDA model
+        returns: topic composition matrix. This is a # songs x # topics matrix
+            which contains values that correspond to how well a song is represented
+            by the given topic
+        """
         lda = LdaModel(self.bow_users, num_topics=num_topics)
         # Holds the topic composition vector for each track id
         # I'm not sure whether we should use this (which gives weights)
         # or whether we should use get_document_topics (slower) that
         # gives probabilities. In theory they should be the same
         topic_composition = lda.inference(self.bow_users)[0] # returns a tuple, 2nd value is usually None
-        with open('topic.pickle', 'wb') as f:
+        with open('pickles/topic.pickle', 'wb') as f:
             pickle.dump(topic_composition, f)
         return topic_composition
 
+    def create_raw_pickle(self, grouped_hist):
+        """For each song, create list of users who listened to it. Save to pickle
+        params:
+            grouped_hist: track history dataset, grouped by track_id
+        """
+        # corpus_raw will be a list of lists. The lists will be lists of users
+        # who listened to a particular song. We need to do this conversion because
+        # Gensim expects a list as input, afaik
+        corpus_raw = []
+        for track_id, _ in grouped_hist:
+            corpus_raw.append(grouped_hist.get_group(track_id)['user_id'].to_list())
+        # Save to a pickle for easier loading in the future
+        with open('pickles/raw.pickle', 'wb') as f:
+            pickle.dump(corpus_raw, f)
+        return corpus_raw
+
     def create_bow_pickle(self):
+        """Create the bag of words representation of the dataset"""
         dictionary = Dictionary(self.corpus_raw)
         # In our context, the documents are songs, and the users are words
         # The bag of words representation essentially counts the number of times
@@ -129,18 +194,6 @@ class Auralist:
         with open('pickles/bow.pickle', 'wb') as f:
             pickle.dump(bow_users, f)
         return bow_users
-
-    def create_raw_pickle(self, grouped_hist):
-        # corpus_raw will be a list of lists. The lists will be lists of users
-        # who listened to a particular song. We need to do this conversion because
-        # Gensim expects a list as input, afaik
-        corpus_raw = []
-        for track_id, _ in grouped_hist:
-            corpus_raw.append(grouped_hist.get_group(track_id)['user_id'].to_list())
-        # Save to a pickle for easier loading in the future
-        with open('pickles/raw.pickle', 'wb') as f:
-            pickle.dump(corpus_raw, f)
-        return corpus_raw
 
 if __name__ == "__main__":
     aur = Auralist()
