@@ -56,7 +56,20 @@ class Auralist:
             self.topic_composition = self.train_lda(num_topics)
 
         print('Calculating listener diversity array...')
-        self.listener_div = self.listener_diversity_rankings(self.topic_composition, self.popularity_count)
+        self.listener_diversity_rankings = self.listener_diversity(self.topic_composition, self.popularity_count)
+
+    def community_aware_ranking(self, user_id, diversity_lambda):
+        """Return ranks for Community-Aware Auralist, from page 6 of the paper
+        params:
+            user_id: ID of the user to predict recommendations for. Used in basic Auralist
+            diversity_lambda: Linear interpolation constant for the listener diversity ranking
+        returns:
+            A ranking that combines the output of the basic Auralist and listener diversity
+            submodules, given as a numpy array of indices
+        """
+        basic = (1 - diversity_lambda, self.basic_auralist(user_id))
+        diversity = (diversity_lambda, self.listener_diversity_rankings)
+        return self.linear_interpolation(basic, diversity)
 
     def lda_similarity(self, topic_comp, user_tc):
         """Compute the LDA similarity between each row of two different matrices
@@ -87,8 +100,8 @@ class Auralist:
         This is module 1 of Auralist
         params:
             user_id: ID of the user to predict recommendations for
-        returns: indexes of the track IDs to recommend, where 0 is the most recommended,
-            element at end is least recommended
+        returns: indexes of the track IDs to recommend, where 0 is the least recommended,
+            element at end is most recommended
         """
         # Get topic composition for user history matrix
         user_topic_composition = self.get_user_topic_comp(user_id)
@@ -112,7 +125,7 @@ class Auralist:
         track_ids = sorted([self.trackid2index[key] for key in user_hist['track_id']])
         return self.topic_composition[track_ids]
 
-    def listener_diversity_rankings(self, topic_composition, popularity):
+    def listener_diversity(self, topic_composition, popularity):
         """Calculate rankings for module 2 of Auralist.
         params:
         topic_comp: total topic composition matrix
@@ -142,11 +155,14 @@ class Auralist:
                 tuples. Lambda is the interpolation coefficient, and the ranking list is a list
                 of indices in recommendation order for one of the sub-modules.
                 As an example, if we have:
-                basic = array([0, 1, 2, 3])
+                basic = array([1, 0, 2, 3])
                 diverse = array([2, 3, 1, 0])
                 If we want basic to have 70% of the influence, and diverse to have 30% of the
                 influence, we would call the function in the following way:
                 linear_interpolation((0.7, basic), (0.3, diverse))
+        returns:
+            An interpolated ranking of the given index rankings. For example, if given the call
+            in the example above, would return array([1, 2, 0, 3])
         """
         num_items = len(rankings[0][1])
         # This will hold the interpolated rankings. Each number can be thought of as the new
@@ -221,11 +237,5 @@ class Auralist:
         return bow_users
 
 if __name__ == "__main__":
-    with open('basic.p', 'rb') as f:
-        basic = pickle.load(f)
-    with open('diverse.p', 'rb') as f:
-        diverse = pickle.load(f)
-    test1 = array([5, 4, 3, 2, 1, 0])
-    test2 = array([0, 1, 2, 3, 5, 4])
-    test3 = array([3, 5, 0, 1, 2, 4])
-    print(linear_interpolation((0.5, test1), (0.3, test2), (0.2, test3)))
+    aur = Auralist()
+    print(aur.community_aware_ranking('user_000001', diversity_lambda=0.3))
