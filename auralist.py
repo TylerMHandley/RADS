@@ -3,7 +3,7 @@ from gensim.corpora.dictionary import Dictionary
 from gensim.models.ldamodel import LdaModel
 import pickle
 from sys import argv
-from numpy import matmul, divide, reciprocal, zeros, log2, array, sum as npsum
+from numpy import matmul, divide, reciprocal, zeros, log2, array, arange, sum as npsum, array_equal
 from numpy.linalg import norm
 from sklearn.linear_model import LinearRegression
 from os.path import isfile
@@ -101,7 +101,7 @@ class Auralist:
         # a particular track
         # This gives you the indices that would sort the array
         # this is what we want, since the indices correspond to track IDs
-        return rec_vals.argsort()[::-1]
+        return rec_vals.argsort()
 
     def get_user_topic_comp(self, user_id):
         """Gets all track IDs in a user's listening history
@@ -133,7 +133,32 @@ class Auralist:
         # a particular track
         # This gives you the indices that would sort the array
         # this is what we want, since the indices correspond to track IDs
-        return list_div.argsort()[::-1]
+        return list_div.argsort()
+
+    def linear_interpolation(self, *rankings):
+        """Perform linear interpolation of given rankings to give final recommendation result
+        params:
+            *rankings: variable number of (lambda, ranking list) pairings, ideally given as
+                tuples. Lambda is the interpolation coefficient, and the ranking list is a list
+                of indices in recommendation order for one of the sub-modules.
+                As an example, if we have:
+                basic = array([0, 1, 2, 3])
+                diverse = array([2, 3, 1, 0])
+                If we want basic to have 70% of the influence, and diverse to have 30% of the
+                influence, we would call the function in the following way:
+                linear_interpolation((0.7, basic), (0.3, diverse))
+        """
+        num_items = len(rankings[0][1])
+        # This will hold the interpolated rankings. Each number can be thought of as the new
+        # rank of the corresponding song. The indices->items mapping follows the same convention
+        # as all other functions
+        results = zeros(num_items)
+        indices = arange(1, num_items + 1)
+        for coeff, ranking_list in rankings:
+            # Each ranking list is just a list of indices corresponding to certain tracks, so we
+            # can index into results using this list
+            results[ranking_list] += coeff * indices
+        return results.argsort()
 
     def train_listener_diversity_lr(self, popularity, diversity):
         """Calculate linear regression for Offset_pop(i) from Auralist Paper
@@ -196,5 +221,11 @@ class Auralist:
         return bow_users
 
 if __name__ == "__main__":
-    aur = Auralist()
-    print(aur.basic_auralist('user_000001'))
+    with open('basic.p', 'rb') as f:
+        basic = pickle.load(f)
+    with open('diverse.p', 'rb') as f:
+        diverse = pickle.load(f)
+    test1 = array([5, 4, 3, 2, 1, 0])
+    test2 = array([0, 1, 2, 3, 5, 4])
+    test3 = array([3, 5, 0, 1, 2, 4])
+    print(linear_interpolation((0.5, test1), (0.3, test2), (0.2, test3)))
