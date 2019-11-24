@@ -2,8 +2,7 @@ from pandas import read_csv
 from gensim.corpora.dictionary import Dictionary
 from gensim.models.ldamodel import LdaModel
 import pickle
-from sys import argv
-from numpy import matmul, divide, reciprocal, zeros, log2, array, arange, sum as npsum, array_equal
+from numpy import matmul, reciprocal, zeros, log2, array, multiply, arange, copy, sum as npsum
 from numpy.linalg import norm
 from sklearn.linear_model import LinearRegression
 from os.path import isfile
@@ -137,7 +136,12 @@ class Auralist:
         returns: List of indexes sorted by listener diversity
         """
         # Calculate equation for Listener Diversity
-        list_div_basic = -1 * npsum((topic_composition * log2(topic_composition)), axis=1)
+        # Take log of topic_composition
+        tc_copy = copy(topic_composition)
+        mask = tc_copy != 0
+        tc_copy[mask] = log2(tc_copy[mask])
+        # Multiply element-wise, then sum over rows and negate
+        list_div_basic = -1 * npsum((topic_composition * tc_copy), axis=1)
         # Calculate linear regression for Offset_pop(i)
         lr = self.train_listener_diversity_lr(popularity, list_div_basic)
         # Calculate Listener Diversity'
@@ -202,6 +206,10 @@ class Auralist:
         # or whether we should use get_document_topics (slower) that
         # gives probabilities. In theory they should be the same
         topic_composition = lda.inference(self.bow_users)[0] # returns a tuple, 2nd value is usually None
+        # normalize topic composition matrix
+        topic_composition /= topic_composition.sum(axis=1).reshape(-1, 1)
+        # Remove small probabilities that are essentially noise (set them to 0)
+        topic_composition = multiply(topic_composition, (topic_composition > 0.01).astype(int))
         with open('pickles/topic.pickle', 'wb') as f:
             pickle.dump(topic_composition, f)
         return topic_composition
