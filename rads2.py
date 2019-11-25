@@ -39,9 +39,10 @@ class RADS:
         if exists(pickle_filename):
             self.radsData = load(open(pickle_filename, 'rb'))
         else:
-            x = 20 
-            indexes = list(self.song_data.index)
-            indexes = indexes[:len(indexes)//x]
+            x = 8
+            indexes = list(self.userModels.keys())
+            y = len(indexes)//x
+            indexes = indexes[:y]
             total_ids = len(indexes)
             split_val = total_ids//8
             self.radsData = dict.fromkeys(indexes)      
@@ -68,21 +69,21 @@ class RADS:
                 print("Beginning Write to File")
                 for key in man_dict.keys():
                     self.radsData[key] = man_dict[key]
-            dump(self.radsData, open('songs_{}_{}_'.format(1, len(indexes)//x) + pickle_filename, 'wb'))
+            dump(self.radsData, open('songs_{}_{}_'.format(1, y) + pickle_filename, 'wb'))
 
                 
 
     def generate_worker(self, data, mgr):
-        for track_id in data:
-            features = self.song_data.loc[track_id]
-            mgr[track_id] = {}
-            users = []
-            for user_id in self.userModels.keys():
-                current_model = self.userModels[user_id]
+        for user_id in data:
+            current_model = self.userModels[user_id]
+            mgr[user_id] = {}
+            tracks = []
+            for track_id in self.song_data.index:
+                features = self.song_data.loc[track_id]
                 value = current_model.decision_function([features])
                 if value < 0:
-                    users.append((user_id, -1*value))
-            mgr[track_id] = users
+                    tracks.append((track_id, -1*value))
+            mgr[user_id] = tracks
         
     
 
