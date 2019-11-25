@@ -2,7 +2,7 @@ from pandas import read_csv
 from gensim.corpora.dictionary import Dictionary
 from gensim.models.ldamodel import LdaModel
 import pickle
-from numpy import nonzero, matmul, reciprocal, zeros, log2, array, multiply, arange, copy, sum as npsum
+from numpy import delete, nonzero, matmul, reciprocal, zeros, log2, array, multiply, arange, copy, sum as npsum
 from numpy.linalg import norm
 from sklearn.linear_model import LinearRegression
 from os.path import isfile
@@ -179,6 +179,10 @@ class Auralist:
         user_track_ids = self.get_user_track_ids(user_id)
         # matrix where entry i,j contains the sim(i,j) result for songs i,j in the user's comp.
         abc = self.user_pairs_for_similarity(user_topic_composition, user_topic_composition)
+        de = self.user_pairs_for_similarity(self.topic_composition, user_topic_composition)
+        print(de.shape)
+        new_len = len(de) # treat as full length now... - len(user_track_ids)
+        #518924, 289541, 466981
         size = len(abc[0])
         total = 0
         count = 0
@@ -199,26 +203,46 @@ class Auralist:
                     abc_bool[i, j] = 0
                     abc_bool[j, i] = 0
         # cluster_list to obtain result of declustering
-        cluster_list = zeros((len(abc[0]), 2))
+        cluster_list = zeros((new_len, 2))
         # for item i in candidate set for user
-        for i in range(len(abc[0])):
-            edgeTotal = 0
-            edgeCount = 0
-            # neighbors of row i are indices with nonzero sim
-            neighbors = nonzero(abc[i])[0]
-            # Iterate through through upper triangle of matrix
-            # to account for each item pair j,k in neighbors
-            # But do not include item pairs (j,j)!
-            for j in range(len(neighbors) - 1):
-                temp_arr = abc_bool[neighbors[j]][neighbors[j + 1:]]
-                # "nxn matrix": Add to edgeTotal for nonzero (j,j+1),...,(j,n) in abc_bool
-                edgeTotal += npsum(temp_arr)
-                # Add to edgeCount by counting "j+1,j+2,...,n"
-                edgeCount += len(temp_arr)
-            # Get edgeTotal and edgeCount from ALL pairs
-            # Add song's trackid, followed by "clustering = edgeTotal/EdgeCount"
-            cluster_list[i][0] = user_track_ids[i]
-            cluster_list[i][1] = edgeTotal / edgeCount
+        count=0
+        for i in range(len(de)):
+            #should print 0-520000 by intervals of 10000
+            if i % 10000 == 0:
+                print(i)
+            #Get tracks user hasn't seen, while also using arr index for songid
+            if i not in user_track_ids:
+                edgeTotal = 0
+                edgeCount = 0
+                # neighbors of row i are indices with nonzero sim
+                neighbors = nonzero(de[i])[0]
+                #set index, taking into account 'deleted' indices
+                #cluster_list[count][0] = i
+                cluster_list[i][0] = i
+                if len(neighbors) == 0:
+                    #original: cluster_list[count][1] = 0
+                    cluster_list[i][1] = 0
+                else:
+                    # Iterate through through upper triangle of matrix
+                    # to account for each item pair j,k in neighbors
+                    # But do not include item pairs (j,j)!
+                    for j in range(len(neighbors) - 1):
+                        temp_arr = abc_bool[neighbors[j]][neighbors[j + 1:]]
+                        # "nxn matrix": Add to edgeTotal for nonzero (j,j+1),...,(j,n) in abc_bool
+                        edgeTotal += npsum(temp_arr)
+                        # Add to edgeCount by counting "j+1,j+2,...,n"
+                        edgeCount += len(temp_arr)
+                    # Get edgeTotal and edgeCount from ALL pairs
+                    # Add song's trackid, followed by "clustering = edgeTotal/EdgeCount"
+                    ###cluster_list[count][0] = de[i]
+
+                    #original: cluster_list[count][1] = edgeTotal / edgeCount
+                    cluster_list[i][1] = edgeTotal / edgeCount
+                    count += 1
+            else:
+                #temp code for songs user listened to, towards len 520998 array
+                cluster_list[i][0] = i
+                cluster_list[i][1] = 0
         # Sort by clustering values
         cluster_list = cluster_list[cluster_list[:, 1].argsort()]
         return cluster_list[:, 0].astype(int)
@@ -340,7 +364,9 @@ if __name__ == "__main__":
     # print(aur.basic_auralist('user_000001'))
 
     # print(aur.get_user_track_ids('user_000001'))
-    print(aur.declustering('user_000001'))
+    #print(aur.declustering('user_000001'))
+    bub = aur.bubble_aware_ranking('user_000001',0.5)
+    print(bub)
     # print(aur.bubble_aware_ranking('user_000001',1))
 
     # print("First:")
