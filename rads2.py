@@ -2,8 +2,8 @@ from anomalyDetection import AnomalyDetection
 from os.path import exists
 from pickle import load, dump
 from pandas import read_csv
-from multiprocessing import Process, Manager
-
+from multiprocessing import Process, Manager, Pool
+from auralist import Auralist
 
 def loadData(filenames, index_column):
         data = read_csv(filenames[0], index_col=index_column)
@@ -37,6 +37,7 @@ class RADS:
 
     def generate(self, pickle_filename):
         if exists(pickle_filename):
+            print('Loading anomaly list from {}'.format(pickle_filename))
             self.radsData = load(open(pickle_filename, 'rb'))
         else:
             x = 8
@@ -45,45 +46,61 @@ class RADS:
             indexes = indexes[:y]
             total_ids = len(indexes)
             split_val = total_ids//8
-            self.radsData = dict.fromkeys(indexes)      
-            with Manager() as manager:
-                man_dict = manager.dict(self.radsData)
-                pool = []
-                count = 0
-                first = 0
-                second = split_val
-                while(second<total_ids):
-                    data = indexes[first:second]
-                    #features = self.song_data.loc[track_id]
-                    p = Process(target=self.generate_worker, args=(data, man_dict))
-                    pool.append(p)
-                    p.start()
-                    first += split_val
-                    second += split_val
-                data = indexes[first:]
-                p = Process(target=self.generate_worker, args=(data, man_dict))
-                pool.append(p)
-                p.start()
-                for proc in pool:
-                    proc.join()
-                print("Beginning Write to File")
-                for key in man_dict.keys():
-                    self.radsData[key] = man_dict[key]
-            dump(self.radsData, open('songs_{}_{}_'.format(1, y) + pickle_filename, 'wb'))
+            # self.radsData = dict.fromkeys(indexes)      
+            # with Manager() as manager:
+                # man_dict = manager.dict(self.radsData)
+                # pool = []
+            data = []
+            count = 0
+            first = 0
+            second = split_val
+            while(second<total_ids):
+                data.append(indexes[first:second])
+                first += split_val
+                second += split_val
+                # p = Process(target=self.generate_worker, args=(data, man_dict))
+                # pool.append(p)
+                # p.start()
+            data.append(indexes[first:])
+            # p = Process(target=self.generate_worker, args=(data, man_dict))
+            # pool.append(p)
+            # p.start()
+            # for proc in pool:
+                # proc.join()
+            p = Pool(processes=8)
+            results = p.map(self.generate_worker, data)
+            print("Beginning Write to File")
+            self.radsData = {}
+            for i in results:
+                self.radsData.update(dict(i))
+            # for key in man_dict.keys():
+                # self.radsData[key] = man_dict[key]
+            dump(self.radsData, open(pickle_filename, 'wb'))
 
-                
+    def get_output(self,all=True):
+            results = []
+            if all:
+                for user in self.radsData.keys():
+                    partial = sorted(self.radsData[user], key=lambda x: x[1])
+                    #results[user] = list(map(lambda x: x[0], partial))
+                    results.append(list(map(lambda x: x[0], partial)))
+            else:
+                partial = sorted(self.radsData['user_000001'], key=lambda x: x[1])
+                #results['user_000001'] = list(map(lambda x: x[0], partial))
+                results.append(list(map(lambda x: x[0], partial)))
+            return results      
 
-    def generate_worker(self, data, mgr):
+    def generate_worker(self, data):
+        results = []
         for user_id in data:
             current_model = self.userModels[user_id]
-            mgr[user_id] = {}
             tracks = []
             for track_id in self.song_data.index:
                 features = self.song_data.loc[track_id]
                 value = current_model.decision_function([features])
-                if value < 0:
-                    tracks.append((track_id, -1*value))
-            mgr[user_id] = tracks
+                tracks.append((track_id, -1*1/value))
+            results.append((user_id, tracks))
+        return results
         
     
 
@@ -92,3 +109,14 @@ if __name__ == "__main__":
     user_history_files = ['musicbrainz-data/userid-trackid-1.csv', 'musicbrainz-data/userid-trackid-2.csv']
     model = RADS(song_feature_files, user_history_files, 'user_models.p', 'user_histories.p')
     model.generate('rads_data.p')
+    anomaly_results = model.get_output(100, all=False)
+    print(len(anomaly_results))
+    aur = Auralist()
+    for i in range(len(anomaly_results)):
+        anomaly_results[i] = list(map(lambda x: aur.trackid2index[x], anomaly_results[i]))
+    print(anomaly_results)
+    basic_aur_results = aur.basic_auralist('user_000001')[-100:]
+    print(len(basic_aur_results), len(anomaly_results))
+    final = aur.linear_interpolation((0.7, basic_aur_results),(0.3, anomaly_results[0]))
+    with open('single_rads_result.p', 'wb+') as output:
+        dump(final, output)

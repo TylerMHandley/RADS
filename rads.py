@@ -69,7 +69,6 @@ class RADS:
                 for key in man_dict.keys():
                     self.radsData[key] = man_dict[key]
             dump(self.radsData, open('songs_{}_{}_'.format(1, len(indexes)//x) + pickle_filename, 'wb'))
-
                 
 
     def generate_worker(self, data, mgr):
@@ -90,4 +89,5 @@ if __name__ == "__main__":
     song_feature_files = ['musicbrainz-data/song_features.csv']
     user_history_files = ['musicbrainz-data/userid-trackid-1.csv', 'musicbrainz-data/userid-trackid-2.csv']
     model = RADS(song_feature_files, user_history_files, 'user_models.p', 'user_histories.p')
-    model.generate('rads_data.p')
+    model.generate('songs_1_7_rads_data.p')
+    model.get_output(20, all=False)
