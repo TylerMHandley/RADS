@@ -13,9 +13,9 @@ class Auralist:
         Some variables will be loaded from pickle files, if they're available.
         """
         print('Loading listening history, pt. 1...', end='\r')
-        hist_pt1 = read_csv('musicbrainz-data/userid-trackid-1.csv')
+        hist_pt1 = read_csv('musicbrainz-data/train1.csv')
         print('Loading listening history, pt. 2...')
-        hist_pt2 = read_csv('musicbrainz-data/userid-trackid-2.csv')
+        hist_pt2 = read_csv('musicbrainz-data/train2.csv')
         total_hist = hist_pt1.append(hist_pt2)
         grouped_hist = total_hist.groupby('track_id')
         self.total_hist = total_hist.set_index('user_id')
