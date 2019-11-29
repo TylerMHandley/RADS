@@ -40,7 +40,7 @@ class RADS:
             print('Loading anomaly list from {}'.format(pickle_filename))
             self.radsData = load(open(pickle_filename, 'rb'))
         else:
-            x = 8
+            x = 50
             indexes = list(self.userModels.keys())
             y = len(indexes)//x
             indexes = indexes[:y]
@@ -67,7 +67,7 @@ class RADS:
             # p.start()
             # for proc in pool:
                 # proc.join()
-            p = Pool(processes=8)
+            p = Pool(processes=2)
             results = p.map(self.generate_worker, data)
             print("Beginning Write to File")
             self.radsData = {}
@@ -79,16 +79,19 @@ class RADS:
 
     def get_output(self,all=True):
             results = []
+            users = []
             if all:
                 for user in self.radsData.keys():
                     partial = sorted(self.radsData[user], key=lambda x: x[1])
                     #results[user] = list(map(lambda x: x[0], partial))
                     results.append(list(map(lambda x: x[0], partial)))
+                    users.append(user)
             else:
                 partial = sorted(self.radsData['user_000001'], key=lambda x: x[1])
                 #results['user_000001'] = list(map(lambda x: x[0], partial))
                 results.append(list(map(lambda x: x[0], partial)))
-            return results      
+                users.append['user_000001']
+            return results, users      
 
     def generate_worker(self, data):
         results = []
@@ -106,17 +109,22 @@ class RADS:
 
 if __name__ == "__main__":
     song_feature_files = ['musicbrainz-data/song_features.csv']
-    user_history_files = ['musicbrainz-data/userid-trackid-1.csv', 'musicbrainz-data/userid-trackid-2.csv']
+    user_history_files = ['musicbrainz-data/train1.csv', 'musicbrainz-data/train2.csv']
     model = RADS(song_feature_files, user_history_files, 'user_models.p', 'user_histories.p')
     model.generate('rads_data.p')
-    anomaly_results = model.get_output(100, all=False)
+    anomaly_results = model.get_output(all=False)
     print(len(anomaly_results))
     aur = Auralist()
     for i in range(len(anomaly_results)):
-        anomaly_results[i] = list(map(lambda x: aur.trackid2index[x], anomaly_results[i]))
-    print(anomaly_results)
-    basic_aur_results = aur.basic_auralist('user_000001')[-100:]
-    print(len(basic_aur_results), len(anomaly_results))
+        found_songs = [] 
+        for j in range(len(anomaly_results[i])):
+            x = aur.trackid2index.get(anomaly_results[i][j], -1)
+            if x != -1:
+                found_songs.append(x)
+        anomaly_results[i] = found_songs
+        # anomaly_results[i] = list(map(lambda x: aur.trackid2index[x], anomaly_results[i]))
+    basic_aur_results = aur.basic_auralist('user_000001')
+    print(len(basic_aur_results), len(anomaly_results[0]))
     final = aur.linear_interpolation((0.7, basic_aur_results),(0.3, anomaly_results[0]))
     with open('single_rads_result.p', 'wb+') as output:
         dump(final, output)

@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 from numpy import sum as npsum
-from numpy import matmul, norm, reciprocal
+from numpy import matmul, reciprocal
+from numpy.linalg import norm
 from math import log
-# from auralist import Auralist
+from pandas import read_csv 
+from auralist import Auralist
+from rads2 import RADS
 '''
     This file will perform the reccomendations on the output of our algorithm
 '''
@@ -46,7 +49,7 @@ def similarity(self, topic_comp, user_tc):
 
 
 
-def getMetrics(user_histories, top_n_songs, song_populary, n=20):
+def getMetricsAll(user_history, top_n_songs, song_populary, n=20):
     total_num_users = len(user_histories)
     unserendipity = 0
     novelty = 0
@@ -61,9 +64,50 @@ def getMetrics(user_histories, top_n_songs, song_populary, n=20):
     novelty = novelty/total_num_users
     return novelty, unserendipity
 
+def getMetrics(history, recommendation, song_populary, total_num_users, n=20):
+    sim = similarity(history, recommendation)
+    unserendipity = 1/(total_num_users*n)*(npSum(sim)/n)
+    novelty = sum(map(lambda x: log(song_populary[x]), recommendation))
+    return novelty, unserendipity
+
 
         
 
 if __name__ == '__main__':
-    # aur = Auralist()
-
+    aur = Auralist()
+    listener_diversity = aur.listener_diversity_rankings
+    song_populary = aur.popularity_count/sum(aur.popularity_count)
+    test_data = read_csv('musicbrainz-data/test.csv', index_col='user_id')
+    song_feature_files = ['musicbrainz-data/song_features.csv']
+    user_history_files = ['musicbrainz-data/train1.csv', 'musicbrainz-data/train2.csv']
+    model = RADS(song_feature_files, user_history_files, 'user_models.p', 'user_histories.p')
+    model.generate('rads_data.p')
+    anomaly_results, users = model.get_output()
+    for i in range(len(anomaly_results)):
+        found_songs = []
+        for j in range(len(anomaly_results[i])):
+            x = aur.trackid2index.get(anomaly_results[i][j], -1)
+            if x != -1:
+                found_songs.append(x)
+        anomaly_results[i] = found_songs
+    total_users = len(users)
+    n = 100
+    rads_novelty = 0
+    rads_serendipity = 0
+    aur_novelty = 0
+    aur_serendipity = 0
+    for user in users:
+        basic_aur_results = aur.basic_auralist(user)
+        rads =  aur.linear_interpolation((0.7, basic_aur_results),(0.3, anomaly_results[0]))
+        declustering_ranking = aur.declustering_ranking(user)
+        auralist = aur.linear_interpolation((0.7, basic_aur_results),(0.15, listener_diversity),(0.15, declustering_ranking))
+        x, y = getMetrics(test_data[user], rads[-1*n:], song_populary, total_users, n)
+        rads_novelty += x
+        rads_serendipity += y
+        x, y = getMetrics(test_data[user], auralist[-1*n:], song_populary, total_users, n)
+        aur_novelty += x
+        aur_serendipity += y
+    rads_novelty/= total_users
+    aur_novelty /= total_users
+    print("Rads Novelty and Serendipity: {} {}".format(rads_novelty, rads_serendipity))
+    print("Auralist Novelty and Serendipity: {} {}".format(aur_novelty, aur_serendipity))

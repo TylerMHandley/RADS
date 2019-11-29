@@ -56,7 +56,7 @@ class Auralist:
             self.topic_composition = self.train_lda(num_topics)
 
         # print('Calculating listener diversity array...')
-        # self.listener_diversity_rankings = self.listener_diversity(self.topic_composition, self.popularity_count)
+        self.listener_diversity_rankings = self.listener_diversity(self.topic_composition, self.popularity_count)
         print("Start Declustering")
 
     def community_aware_ranking(self, user_id, diversity_lambda):
