@@ -112,7 +112,7 @@ if __name__ == "__main__":
     user_history_files = ['musicbrainz-data/train1.csv', 'musicbrainz-data/train2.csv']
     model = RADS(song_feature_files, user_history_files, 'user_models.p', 'user_histories.p')
     model.generate('rads_data.p')
-    anomaly_results = model.get_output(all=False)
+    anomaly_results, users = model.get_output(all=False)
     print(len(anomaly_results))
     aur = Auralist()
     for i in range(len(anomaly_results)):

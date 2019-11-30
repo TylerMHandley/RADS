@@ -49,7 +49,7 @@ def cosim(i,j,aur):
 
 def getRecall(withheld, rec_rads, rec_aur):
     rads_count = 0
-    aur_count
+    aur_count = 0
     for song_index in withheld:
         if song_index in rec_rads:
             rads_count += 1
@@ -93,11 +93,11 @@ if __name__ == '__main__':
         rads =  aur.linear_interpolation((0.7, basic_aur_results),(0.3, anomaly_results[dex]))
         declustering_ranking = aur.declustering(user)
         auralist = aur.linear_interpolation((0.7, basic_aur_results),(0.15, listener_diversity),(0.15, declustering_ranking))
-        x, y = getRecall(user_history, rads[-1*n:], auralist[-1*n])
+        x, y = getRecall(user_history, rads[-1*n:], auralist[-1*n:])
         rads_recall += x
         aur_recall += y
         rad_rec.append(rads[-1*n:])
-        aur_rec.append(auralist[-1*n])
+        aur_rec.append(auralist[-1*n:])
     print('The {}-Recall for Rads is {}'.format(n, rads_recall/total_users))
     print('The {}-Recall for Auralist is {}'.format(n, aur_recall/total_users))
     aur_novelty = 0
