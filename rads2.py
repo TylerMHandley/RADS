@@ -14,7 +14,7 @@ def loadData(filenames, index_column):
         return data
 
 class RADS:
-    def __init__(self, song_files, user_files, svm_pickle_filename=None, history_pickle_filename=None):
+    def __init__(self, song_files, user_files, candidates, svm_pickle_filename=None, history_pickle_filename=None):
         self.radsData = None
         self.userModels = None
         self.song_data = loadData(song_files, 'track_id')
@@ -22,6 +22,7 @@ class RADS:
         self.user_history_files = user_files
         self.svm_pickle_filename = svm_pickle_filename
         self.history_pickle_filename = history_pickle_filename
+        self.canidates = candidates
         self.getSVMs()
 
     def getSVMs(self):
@@ -40,10 +41,7 @@ class RADS:
             print('Loading anomaly list from {}'.format(pickle_filename))
             self.radsData = load(open(pickle_filename, 'rb'))
         else:
-            x = 50
             indexes = list(self.userModels.keys())
-            y = len(indexes)//x
-            indexes = indexes[:y]
             total_ids = len(indexes)
             split_val = total_ids//8
             # self.radsData = dict.fromkeys(indexes)      
@@ -67,7 +65,7 @@ class RADS:
             # p.start()
             # for proc in pool:
                 # proc.join()
-            p = Pool(processes=2)
+            p = Pool(processes=4)
             results = p.map(self.generate_worker, data)
             print("Beginning Write to File")
             self.radsData = {}
@@ -98,7 +96,7 @@ class RADS:
         for user_id in data:
             current_model = self.userModels[user_id]
             tracks = []
-            for track_id in self.song_data.index:
+            for track_id in self.canidates:
                 features = self.song_data.loc[track_id]
                 value = current_model.decision_function([features])
                 tracks.append((track_id, -1*1/value))

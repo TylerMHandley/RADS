@@ -193,15 +193,17 @@ class Auralist:
                 count += 1
         avgSim = total / count
         # make a copy of abc, fill entries with 1 if their num > avgSim, 0 otherwise
-        abc_bool = copy(abc)
+        # Making a copy is not needed, filling with ones is faster
+        # abc_bool = copy(abc)
+        abc_bool = zeros(abc.shape)
         for i in range(size):
             for j in range(i + 1):
                 if abc[i, j] > avgSim:
                     abc_bool[i, j] = 1
                     abc_bool[j, i] = 1
-                else:
-                    abc_bool[i, j] = 0
-                    abc_bool[j, i] = 0
+                # else:
+                #     abc_bool[i, j] = 0
+                #     abc_bool[j, i] = 0
         # cluster_list to obtain result of declustering
         cluster_list = zeros((new_len, 2))
         # for item i in candidate set for user
@@ -237,7 +239,10 @@ class Auralist:
                     ###cluster_list[count][0] = de[i]
 
                     #original: cluster_list[count][1] = edgeTotal / edgeCount
-                    cluster_list[i][1] = edgeTotal / edgeCount
+                    try:
+                        cluster_list[i][1] = edgeTotal / edgeCount
+                    except ZeroDivisionError:
+                        cluster_list[i][1] = 0
                     count += 1
             else:
                 #temp code for songs user listened to, towards len 520998 array
