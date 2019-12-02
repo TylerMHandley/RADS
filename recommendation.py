@@ -3,7 +3,7 @@ from numpy import sum as npsum
 from numpy import matmul, reciprocal, array, zeros
 from numpy.linalg import norm
 from math import log
-from pandas import read_csv 
+from pandas import read_csv, DataFrame 
 from auralist import Auralist
 from rads2 import RADS
 from os.path import exists
@@ -72,37 +72,36 @@ def getPopularity(corpus):
 
 if __name__ == '__main__':
     aur = Auralist()
-    listener_diversity = aur.listener_diversity_rankings
     song_populary = getPopularity(aur.corpus_raw)
     test_data = read_csv('musicbrainz-data/test.csv', index_col='user_id')
     song_feature_files = ['musicbrainz-data/song_features.csv']
     user_history_files = ['musicbrainz-data/train1.csv', 'musicbrainz-data/train2.csv']
-    candidate_index = aur.TODO
-    candidate_id = []
-    for i in candidate_index:
-        candidate_id.append(aur.index2trackid[i])
-    model = RADS(song_feature_files, user_history_files, candidate_id, 'user_models.p', 'user_histories.p')
-    model.generate('rads_data_alls.p')
-    anomaly_results, users = model.get_output()
-    for i in range(len(anomaly_results)):
-        found_songs = []
-        for j in range(len(anomaly_results[i])):
-            x = aur.trackid2index.get(anomaly_results[i][j], -1)
-            if x != -1:
-                found_songs.append(x)
-        anomaly_results[i] = found_songs
-    total_users = len(users)
+    # candidate_index = aur.TODO
+    # candidate_id = []
+    # for i in candidate_index:
+    #     candidate_id.append(aur.index2trackid[i])
+    model = RADS(song_feature_files, user_history_files, 'user_models.p', 'user_histories.p')
+    # model.generate('rads_data_alls.p')
+    # anomaly_results, users = model.get_output()
+    # for i in range(len(anomaly_results)):
+    #     found_songs = []
+    #     for j in range(len(anomaly_results[i])):
+    #         x = aur.trackid2index.get(anomaly_results[i][j], -1)
+    #         if x != -1:
+    #             found_songs.append(x)
+    #     anomaly_results[i] = found_songs
+    total_users = test_data.index.nunique()
     rads_recall = 0
-    
+    users =  test_data.index.unique()
     aur_recall = 0
     
     n = 100
     rad_rec = []
     aur_rec = []
-    print(len(users))
-    for dex, user in enumerate(users):
+    for user in users:
         filename = 'pickles/user_recommendations/{}_rec.p'.format(user)
         if exists(filename):
+            print("Loading {} from pickle".format(user))
             with open(filename, 'rb') as input_file:
                 temp = load(input_file)
                 rad_rec.append(temp[0])
@@ -115,12 +114,25 @@ if __name__ == '__main__':
                 aur_recall += y
         else:
             user_history = []
-            for _, i in test_data.loc[user].iterrows():
+            user_data = test_data.loc[user]
+            if not isinstance(user_data, DataFrame):
+                print('User {} did not have a large enough test set ({})'.format(user, len(user_data)))
+                continue
+            for _, i in user_data.iterrows():
                 user_history.append(aur.trackid2index.get(i['track_id'], -1))   
             basic_aur_results = aur.basic_auralist(user)
-            rads =  aur.linear_interpolation((0.7, basic_aur_results),(0.3, anomaly_results[dex]))
-            #declustering_ranking = aur.declustering(user)
-            auralist = aur.linear_interpolation((0.7, basic_aur_results),(0.30, listener_diversity))
+            indices = aur.get_indices_from_basic_auralist(basic_aur_results)
+            candidate_id = []
+            for i in indices:
+                candidate_id.append(aur.index2trackid[i])
+            anomaly_results = model.generate_worker(user, candidate_id)
+            anomaly_indexes = []
+            for i in anomaly_results:
+                anomaly_indexes.append(aur.trackid2index[i])
+            rads =  aur.linear_interpolation(indices, (0.7, basic_aur_results),(0.3, anomaly_indexes))
+            declustering_ranking = aur.declustering(user, indices)
+            listener_diversity = aur.listener_diversity_from_indexes(indices)
+            auralist = aur.linear_interpolation(indices, (0.7, basic_aur_results),(0.30, listener_diversity))
             x, y = getRecall(user_history, rads[-1*n:], auralist[-1*n:])
             rads_recall += x
             aur_recall += y
@@ -128,7 +140,6 @@ if __name__ == '__main__':
             aur_rec.append(auralist[-1*n:])
             with open(filename, 'wb+') as output:
                 dump([rads[-1*n:], auralist[-1*n:]], output)
-            anomaly_results[dex] = None
     print('The {}-Recall for Rads is {}'.format(n, rads_recall/total_users))
     print('The {}-Recall for Auralist is {}'.format(n, aur_recall/total_users))
     aur_novelty = 0
