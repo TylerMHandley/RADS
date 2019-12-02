@@ -3,6 +3,7 @@ from gensim.corpora.dictionary import Dictionary
 from gensim.models.ldamodel import LdaModel
 import pickle
 from numpy import delete, nonzero, matmul, reciprocal, zeros, log2, array, multiply, arange, copy, sum as npsum
+from numpy import triu_indices, count_nonzero, array_equal, ix_, apply_along_axis, sort
 from numpy.linalg import norm
 from sklearn.linear_model import LinearRegression
 from os.path import isfile
@@ -10,6 +11,7 @@ from os.path import isfile
 
 class Auralist:
     def __init__(self, num_topics=100):
+        self.i = 0
         """Constructor. Sets up all needed variables for prediction
         Some variables will be loaded from pickle files, if they're available.
         """
@@ -57,7 +59,6 @@ class Auralist:
 
         # print('Calculating listener diversity array...')
         self.listener_diversity_rankings = self.listener_diversity(self.topic_composition, self.popularity_count)
-        print("Start Declustering")
 
     def community_aware_ranking(self, user_id, diversity_lambda):
         """Return ranks for Community-Aware Auralist, from page 6 of the paper
@@ -69,8 +70,9 @@ class Auralist:
             submodules, given as a numpy array of indices
         """
         basic = (1 - diversity_lambda, self.basic_auralist(user_id))
-        diversity = (diversity_lambda, self.listener_diversity_rankings)
-        return self.linear_interpolation(basic, diversity)
+        indices = self.get_indices_from_basic_auralist(basic[1])
+        diversity = (diversity_lambda, self.listener_diversity_from_indexes(indices))
+        return self.linear_interpolation(indices, basic, diversity)
 
     def lda_similarity(self, topic_comp, user_tc):
         """Compute the LDA similarity between each row of two different matrices
@@ -96,6 +98,11 @@ class Auralist:
         return npsum(matmul(topic_comp * reciprocal(norm(topic_comp, axis=1, keepdims=True)), \
                             (user_tc * reciprocal(norm(user_tc, axis=1, keepdims=True))).T), axis=1)
 
+    def listener_diversity_from_indexes(self, indexes):
+        diversity_subset_sorted = self.listener_diversity_vals[indexes].argsort()
+        # Return the list of indexes
+        return indexes[diversity_subset_sorted]
+
     def basic_auralist(self, user_id):
         """Perform basic auralist, as described in the Auralist paper
         This is module 1 of Auralist
@@ -114,7 +121,11 @@ class Auralist:
         # a particular track
         # This gives you the indices that would sort the array
         # this is what we want, since the indices correspond to track IDs
-        return rec_vals.argsort()
+        # We keep the top 1000
+        return rec_vals.argsort()[-1000:]
+
+    def get_indices_from_basic_auralist(self, indexes):
+        return sort(indexes)
 
     def get_user_topic_comp(self, user_id):
         """Gets all track IDs in a user's listening history, returns topic composition
@@ -160,13 +171,14 @@ class Auralist:
         # a particular track
         # This gives you the indices that would sort the array
         # this is what we want, since the indices correspond to track IDs
+        self.listener_diversity_vals = list_div
         return list_div.argsort()
 
     def user_pairs_for_similarity(self, topic_comp, user_tc):
         return matmul(topic_comp * reciprocal(norm(topic_comp, axis=1, keepdims=True)), \
                       (user_tc * reciprocal(norm(user_tc, axis=1, keepdims=True))).T)
 
-    def declustering(self, user_id):
+    def declustering(self, user_id, indexes):
         '''Performs the declustering module (4.2.2)
         :param user_id: to get topic composition info for a particular user, and then
         apply declustering for that user
@@ -179,19 +191,23 @@ class Auralist:
         user_track_ids = self.get_user_track_ids(user_id)
         # matrix where entry i,j contains the sim(i,j) result for songs i,j in the user's comp.
         abc = self.user_pairs_for_similarity(user_topic_composition, user_topic_composition)
-        de = self.user_pairs_for_similarity(self.topic_composition, user_topic_composition)
-        print(de.shape)
+        de = self.user_pairs_for_similarity(self.topic_composition[indexes], user_topic_composition)
         new_len = len(de) # treat as full length now... - len(user_track_ids)
         #518924, 289541, 466981
         size = len(abc[0])
-        total = 0
         count = 0
         # Calculate avgSim, iterating through lower triangle of symmetric matrix abc
-        for i in range(size):
-            for j in range(i + 1):
-                total += abc[i, j]
-                count += 1
-        avgSim = total / count
+        # for i in range(size):
+        #     for j in range(i + 1):
+        #         total += abc[i, j]
+        #         count += 1
+        # avgSim = total / count
+
+        # Calc avgsim
+        upper_triangle_indices = triu_indices(len(abc), 1)
+        upper_triangle = abc[upper_triangle_indices]
+        avgSim = npsum(upper_triangle) / len(upper_triangle)
+
         # make a copy of abc, fill entries with 1 if their num > avgSim, 0 otherwise
         # Making a copy is not needed, filling with ones is faster
         # abc_bool = copy(abc)
@@ -210,8 +226,9 @@ class Auralist:
         count=0
         for i in range(len(de)):
             #should print 0-520000 by intervals of 10000
-            if i % 10000 == 0:
-                print(i)
+            # if i % 10000 == 0:
+            #     print(i)
+            print(i, end='\r')
             #Get tracks user hasn't seen, while also using arr index for songid
             if i not in user_track_ids:
                 edgeTotal = 0
@@ -249,8 +266,9 @@ class Auralist:
                 cluster_list[i][0] = i
                 cluster_list[i][1] = 0
         # Sort by clustering values
-        cluster_list = cluster_list[cluster_list[:, 1].argsort()]
-        return cluster_list[:, 0].astype(int)
+        cluster_list = cluster_list[cluster_list[:, 1].argsort()][::-1]
+        print()
+        return indexes[cluster_list[:, 0].astype(int)]
 
     def bubble_aware_ranking(self, user_id, bubble_lambda):
         """Return ranks for Bubble-Aware Auralist, from page 6 of the paper
@@ -262,25 +280,25 @@ class Auralist:
             submodules, given as a numpy array of indices
         """
         a = self.basic_auralist(user_id)
-        print(a.shape)
-        b = self.declustering(user_id)
-        print(b.shape)
+        indices = self.get_indices_from_basic_auralist(a)
+        b = self.declustering(user_id, indices)
         basic = (1 - bubble_lambda, a)
         bubble = (bubble_lambda, b)
-        return self.linear_interpolation(basic, bubble)
+        return self.linear_interpolation(indices, basic, bubble)
 
-    def linear_interpolation(self, *rankings):
+    def linear_interpolation(self, indexes, *rankings):
         """Perform linear interpolation of given rankings to give final recommendation result
         params:
             *rankings: variable number of (lambda, ranking list) pairings, ideally given as
                 tuples. Lambda is the interpolation coefficient, and the ranking list is a list
                 of indices in recommendation order for one of the sub-modules.
                 As an example, if we have:
+                indices = [0, 1, 2, 3]
                 basic = array([1, 0, 2, 3])
                 diverse = array([2, 3, 1, 0])
                 If we want basic to have 70% of the influence, and diverse to have 30% of the
                 influence, we would call the function in the following way:
-                linear_interpolation((0.7, basic), (0.3, diverse))
+                linear_interpolation(indices, (0.7, basic), (0.3, diverse))
         returns:
             An interpolated ranking of the given index rankings. For example, if given the call
             in the example above, would return array([1, 2, 0, 3])
@@ -289,13 +307,12 @@ class Auralist:
         # This will hold the interpolated rankings. Each number can be thought of as the new
         # rank of the corresponding song. The indices->items mapping follows the same convention
         # as all other functions
+        index_dict = dict(zip(indexes, range(num_items)))
         results = zeros(num_items)
-        indices = arange(1, num_items + 1)
         for coeff, ranking_list in rankings:
-            # Each ranking list is just a list of indices corresponding to certain tracks, so we
-            # can index into results using this list
-            results[ranking_list] += coeff * indices
-        return results.argsort()
+            for i, ranking in enumerate(ranking_list):
+                results[index_dict[ranking]] += i * coeff
+        return indexes[results.argsort()]
 
     def train_listener_diversity_lr(self, popularity, diversity):
         """Calculate linear regression for Offset_pop(i) from Auralist Paper
@@ -364,14 +381,27 @@ class Auralist:
 
 if __name__ == "__main__":
     aur = Auralist()
+    basic = aur.basic_auralist('user_000001')
+    indices = aur.get_indices_from_basic_auralist(basic)
+    list_div = aur.listener_diversity_from_indexes(indices)
+    decluster = aur.declustering('user_000001', indices)
+    lin = aur.linear_interpolation(indices, (0.5, basic), (0.3, list_div), (0.2, decluster))
+    print(aur.bubble_aware_ranking('user_000001', 0.5))
+    print(aur.community_aware_ranking('user_000001', 0.5))
     # print(aur.community_aware_ranking('user_000001', diversity_lambda=0.3))
 
     # print(aur.basic_auralist('user_000001'))
 
     # print(aur.get_user_track_ids('user_000001'))
-    #print(aur.declustering('user_000001'))
-    bub = aur.bubble_aware_ranking('user_000001',0.5)
-    print(bub)
+    # print(aur.declustering_newer('user_000001'))
+    # declus = aur.declustering_newer('user_000001')
+    # with open('declus.p', 'rb') as f:
+    #     declus_old = pickle.load(f)
+    # print(array_equal(declus, declus_old))
+    # print(declus)
+    # print(declus_old)
+    # bub = aur.bubble_aware_ranking('user_000001',0.5)
+    # print(bub)
     # print(aur.bubble_aware_ranking('user_000001',1))
 
     # print("First:")
