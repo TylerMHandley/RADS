@@ -10,7 +10,7 @@ def loadData(filenames, index_column):
         if len(filenames) > 1:
             for i in range(1, len(filenames)):
                 extra_part = read_csv(filenames[i], index_col=index_column)
-                data.append(extra_part)
+                data = data.append(extra_part)
         return data
 
 class RADS:

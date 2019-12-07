@@ -22,6 +22,7 @@ from random import random, choice, randrange
 import pickle
 from pandas import read_csv
 from collections import Counter
+from time import time
 #from numpy import asarray, save, load
 
 class AnomalyDetection:
@@ -32,6 +33,7 @@ class AnomalyDetection:
         self.num_user = 0
         self.completed = 0
         self.user_histories = {}
+        self.total_time = 0
     
     def getSongData(self, songs):
         data = []
@@ -49,7 +51,10 @@ class AnomalyDetection:
         topSongs = sorted(songCounts.keys(), key=lambda x: songCounts[x], reverse=True)[:100]
         # songIDs = list(map(self.mapFunction, topSongs))
         song_data = self.getSongData(topSongs)
+        start = time()
         model = OneClassSVM(gamma='auto').fit(song_data)
+        stop = time()
+        self.total_time += stop - start
         self.models[userID] = model
         self.completed += 1
         print('Completed models for {} users'.format(self.completed), end='\r')
@@ -65,6 +70,7 @@ class AnomalyDetection:
                     self.getUserData(userName, data)
                 data = [lineData]
                 userName = user_id
+        print("Took a total {} seconds".format(self.total_time))
         if svm_pickle_name:
             pickle.dump(self.models, open(svm_pickle_name, 'wb'))
         if history_pickle_name:

@@ -228,7 +228,7 @@ class Auralist:
             #should print 0-520000 by intervals of 10000
             # if i % 10000 == 0:
             #     print(i)
-            print(i, end='\r')
+            # print(i, end='\r')
             #Get tracks user hasn't seen, while also using arr index for songid
             if i not in user_track_ids:
                 edgeTotal = 0
@@ -267,7 +267,7 @@ class Auralist:
                 cluster_list[i][1] = 0
         # Sort by clustering values
         cluster_list = cluster_list[cluster_list[:, 1].argsort()][::-1]
-        print()
+        # print()
         return indexes[cluster_list[:, 0].astype(int)]
 
     def bubble_aware_ranking(self, user_id, bubble_lambda):
