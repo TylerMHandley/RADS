@@ -59,7 +59,7 @@ if __name__ == '__main__':
     aur_rec = []
     temp_users = []
 
-    lam1 = 0.10
+    lam1 = 0.05
     lam2 = 0.15
     # lam3 = 0.15
     # count = 0
@@ -87,7 +87,7 @@ if __name__ == '__main__':
                 user_history = []
                 for _, i in test_data.loc[user].iterrows():
                     user_history.append(aur.trackid2index.get(i['track_id'], -1))  
-                x, y = getRecall(user_history, temp[0], temp[1])
+                x, y = getRecall(user_history, rads, auralist)
                 rads_recall += x
                 aur_recall += y
         else:
