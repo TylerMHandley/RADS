@@ -59,13 +59,14 @@ if __name__ == '__main__':
     aur_rec = []
     temp_users = []
 
-    lam1 = 0.05
+    lam1 = 0.15
     lam2 = 0.15
     # lam3 = 0.15
     # count = 0
     # rads_time = 0
     # auralist_time = 0
     # basic_time = 0
+    print("Lam1: {} Lam2: {}".format(lam1, lam2))
     for user in tqdm(users[:-1], ascii=True, leave=False):
         filename = 'pickles/user_rankings/{}_rec.p'.format(user)
 
@@ -87,7 +88,7 @@ if __name__ == '__main__':
                 user_history = []
                 for _, i in test_data.loc[user].iterrows():
                     user_history.append(aur.trackid2index.get(i['track_id'], -1))  
-                x, y = getRecall(user_history, rads, auralist)
+                x, y = getRecall(user_history, rads[-n:], auralist[-n:])
                 rads_recall += x
                 aur_recall += y
         else:
